@@ -138,6 +138,14 @@ h2 { margin: 0; font-family: var(--display); font-weight: 400; font-size: clamp(
 
 .progress { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; width: 100%; height: 3px; background: var(--accent); transform: scaleX(0); transform-origin: left; z-index: 20; pointer-events: none; }
 
+/* sound toggle: a small dashed paper chip, top right */
+.snd { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 0.6rem); right: max(10px, env(safe-area-inset-right, 0px)); z-index: 30; appearance: none; width: 2.75rem; height: 2.75rem; display: grid; place-items: center; padding: 0; border: 1.5px dashed var(--dash); border-radius: 50%; background: var(--card); color: var(--ink); cursor: pointer; transition: background 0.2s ease, color 0.2s ease, rotate 0.2s ease; }
+.snd svg { width: 1.15rem; height: 1.15rem; }
+.snd[aria-pressed="false"] { color: var(--muted); background: transparent; }
+.snd:active { rotate: -6deg; }
+.snd:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (min-width: 52rem) { .snd { top: calc(env(safe-area-inset-top, 0px) + 1rem); right: 1rem; } }
+
 /* sheets */
 .sheet { position: relative; margin-top: -28px; border-radius: 28px 28px 0 0; padding-block: 3.5rem 5.25rem; }
 
@@ -345,6 +353,14 @@ dd { margin: 0; color: var(--muted); }
 
 <div class="progress" id="progress" aria-hidden="true"></div>
 
+<button class="snd" id="snd" type="button" aria-pressed="true" aria-label="Som ligado. Toca para desligar.">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M5 9.5h3l4-3.5v12l-4-3.5H5z"/>
+    <g id="sndWaves"><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18 7a7.4 7.4 0 0 1 0 10"/></g>
+    <g id="sndMute" hidden><path d="M16 10l4 4M20 10l-4 4"/></g>
+  </svg>
+</button>
+
 <main>
   <section class="hero">
     <div class="in">
@@ -500,6 +516,79 @@ dd { margin: 0; color: var(--muted); }
   try { reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
   function buzz(p) { try { if (!reduced && navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
 
+  /* sound cues: synthesized, no files, remembered */
+  var sndBtn = document.getElementById('snd');
+  var sndWaves = document.getElementById('sndWaves');
+  var sndMute = document.getElementById('sndMute');
+  var soundOn = true;
+  try { soundOn = localStorage.getItem('hv-sound') !== '0'; } catch (e) {}
+  var actx = null, nz = null;
+  function ac() {
+    var C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return null;
+    if (!actx) { try { actx = new C(); } catch (e) { return null; } }
+    if (actx.state === 'suspended') { try { actx.resume(); } catch (e) {} }
+    return actx;
+  }
+  function noise(c) {
+    if (nz) return nz;
+    var n = Math.floor(c.sampleRate * 0.8);
+    nz = c.createBuffer(1, n, c.sampleRate);
+    var d = nz.getChannelData(0);
+    for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    return nz;
+  }
+  function whoosh() {
+    if (!soundOn) return; var c = ac(); if (!c) return;
+    var t = c.currentTime, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = noise(c); s.loop = true;
+    f.type = 'lowpass'; f.Q.value = 1.2;
+    f.frequency.setValueAtTime(2200, t);
+    f.frequency.exponentialRampToValueAtTime(180, t + 0.5);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+    s.connect(f); f.connect(g); g.connect(c.destination);
+    s.start(t); s.stop(t + 0.6);
+  }
+  function pop() {
+    if (!soundOn) return; var c = ac(); if (!c) return;
+    var t = c.currentTime, o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(540, t);
+    o.frequency.exponentialRampToValueAtTime(150, t + 0.14);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.24, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    o.connect(g); g.connect(c.destination);
+    o.start(t); o.stop(t + 0.22);
+  }
+  function tick() {
+    if (!soundOn) return; var c = ac(); if (!c) return;
+    var t = c.currentTime, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = noise(c);
+    f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 1.6;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.07, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    s.connect(f); f.connect(g); g.connect(c.destination);
+    s.start(t); s.stop(t + 0.06);
+  }
+  function paintSnd() {
+    sndBtn.setAttribute('aria-pressed', soundOn ? 'true' : 'false');
+    sndBtn.setAttribute('aria-label', soundOn ? 'Som ligado. Toca para desligar.' : 'Som desligado. Toca para ligar.');
+    sndWaves.hidden = !soundOn;
+    sndMute.hidden = soundOn;
+  }
+  paintSnd();
+  sndBtn.addEventListener('click', function () {
+    soundOn = !soundOn;
+    try { localStorage.setItem('hv-sound', soundOn ? '1' : '0'); } catch (e) {}
+    paintSnd();
+    if (soundOn) tick();
+    buzz(10);
+  });
+
   /* scroll: progress bar, cover parallax, cue fade */
   var prog = document.getElementById('progress');
   var heroPhoto = document.getElementById('heroPhoto');
@@ -637,7 +726,7 @@ dd { margin: 0; color: var(--muted); }
       d.classList.toggle('on', k === best);
       d.setAttribute('aria-current', k === best ? 'true' : 'false');
     });
-    if (best !== lastBest) { if (lastBest !== -1) buzz(8); lastBest = best; }
+    if (best !== lastBest) { if (lastBest !== -1) { buzz(8); tick(); } lastBest = best; }
   }
   rail.addEventListener('scroll', function () { requestAnimationFrame(setDot); }, { passive: true });
   window.addEventListener('resize', setDot);
@@ -724,7 +813,7 @@ dd { margin: 0; color: var(--muted); }
       return;
     }
     frames.forEach(function (f, k) { T(function () { shot(f); }, 1800 + k * 800); });
-    T(function () { burst(1); buzz([40, 40, 90]); }, 1800 + 3 * 800 + 150);
+    T(function () { burst(1); pop(); buzz([40, 40, 90]); }, 1800 + 3 * 800 + 150);
     T(function () { stage.classList.add('done'); burst(0.6); }, 1800 + 4 * 800 + 300);
   }
   function closeStage() {
@@ -759,6 +848,7 @@ dd { margin: 0; color: var(--muted); }
     if (out) {
       cap.textContent = 'Desejo feito. Toca outra vez para acender a vela e repetir.';
       buzz(20);
+      whoosh();
       T(openStage, 700);
     } else {
       cap.textContent = 'A vela acendeu outra vez. Sopra de novo quando quiseres.';
