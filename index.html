@@ -456,7 +456,10 @@ dd { margin: 0; color: var(--muted); }
           <span class="note-wave" id="wave" aria-hidden="true"></span>
         </span>
       </button>
-      <audio id="voz" preload="none" src="audio/voz.mp3"></audio>
+      <audio id="voz" preload="metadata">
+        <source src="audio/voz.m4a" type="audio/mp4">
+        <source src="audio/voz.mp3" type="audio/mpeg">
+      </audio>
       <p class="hint rv" id="hint" aria-live="polite">Toca no áudio para ouvires a minha.</p>
     </div>
   </section>
@@ -659,13 +662,20 @@ dd { margin: 0; color: var(--muted); }
   var voz = document.getElementById('voz');
   var noteState = document.getElementById('noteState');
   var vozOk = true;
+  var durLabel = 'agora';
   function waFallback() {
     vozOk = false;
     note.classList.remove('playing');
-    noteState.textContent = 'agora';
+    noteState.textContent = durLabel;
     hint.textContent = 'O áudio está no WhatsApp — abre lá, está à tua espera.';
   }
   voz.addEventListener('error', function () { vozOk = false; });
+  voz.addEventListener('loadedmetadata', function () {
+    if (!isFinite(voz.duration) || voz.duration <= 0) return;
+    var m = Math.floor(voz.duration / 60), s = Math.round(voz.duration % 60);
+    durLabel = m + ':' + (s < 10 ? '0' : '') + s;
+    if (!note.classList.contains('playing')) noteState.textContent = durLabel;
+  });
   note.addEventListener('click', function () {
     nudgeNote(false);
     buzz(12);
@@ -688,7 +698,7 @@ dd { margin: 0; color: var(--muted); }
   });
   voz.addEventListener('ended', function () {
     note.classList.remove('playing');
-    noteState.textContent = 'agora';
+    noteState.textContent = durLabel;
     hint.textContent = 'Obrigado por ouvires até ao fim.';
     buzz([15, 60, 15]);
   });
